@@ -34,6 +34,7 @@ library
                      , postgresql-simple >= 0.5.1.2
                      , scintilla
                      , text >= 1.2.0.4
+                     , time >= 1.5.0.1
                      , thyme >= 0.3.5.5
                      , transformers >= 0.4.2.0
                      , unordered-containers >= 0.2.5.1

@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Todo.Model
 
 main :: IO ()
-main = someFunc
+main = putStrLn "Todo"
