@@ -15,7 +15,8 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Todo.Model
+  exposed-modules:     Todo.DbTypes
+                     , Todo.Model
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , attoparsec >= 0.12.1.5
