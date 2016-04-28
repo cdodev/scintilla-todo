@@ -58,6 +58,15 @@ import Control.Monad.Reader
 import           Control.Monad.Catch             (MonadThrow, MonadCatch, MonadMask, SomeException,
                                                   throwM)
 
+type PkType t pk = Col_HsRType (Col_ByName t pk)
+
+-- class 
+class (UnHsR t a, HasField (TC t pk) (Record (Cols_HsR t)) (PkType t pk)) => ReadKV t pk a where
+
+-- readKV :: forall t a pk. (UnHsR t a, HasField (TC t pk) (Record (Cols_HsR t)) (PkType t pk)) => HsR t -> Either SomeException (PkType t pk, a)
+readKV row = do
+  a <- unHsR' row
+  return (row ^. cola (C :: C pk), a)
 
 data Pomodoro = Pomodoro {
     _started :: !UTCTime
