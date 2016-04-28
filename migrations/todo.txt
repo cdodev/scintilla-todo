@@ -1,0 +1,15 @@
+Description: (Describe migration here.)
+Created: 2016-04-26 04:49:43.523391 UTC
+Depends: 
+Apply: |
+  CREATE SCHEMA IF NOT EXISTS todo;
+  CREATE TABLE todo.todo_item (
+    id uuid PRIMARY KEY NOT NULL DEFAULT uuid_generate_v1()
+  , title text NOT NULL
+  , created timestamptz NOT NULL DEFAULT now()
+  , due timestamptz
+  , completed timestamptz
+  );
+
+Revert: |
+  DROP TABLE todo.todo_item;
