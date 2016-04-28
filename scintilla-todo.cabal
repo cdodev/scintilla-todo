@@ -23,8 +23,9 @@ library
                      , bytestring >= 0.10.4.0
                      , containers >= 0.5.5.1
                      , either >= 4.3.3.2
-                     , errors >= 1.4.7
+                     , exceptions >= 0.8
                      , free
+                     , HList >=0.4 && <0.5
                      , lens
                      , mmorph >= 1.0.4
                      , mtl >= 2.1.3.1

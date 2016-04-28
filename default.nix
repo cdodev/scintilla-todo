@@ -1,8 +1,8 @@
 { mkDerivation, aeson, attoparsec, base, bytestring, containers
-, either, errors, free, lens, mmorph, mtl, opaleye, opaleye-sot
-, pipes, pipes-concurrency, postgresql-simple, scintilla, stdenv
-, tasty, tasty-hspec, tasty-quickcheck, text, thyme, time
-, transformers, unordered-containers, uuid
+, either, exceptions, free, HList, lens, mmorph, mtl, opaleye
+, opaleye-sot, pipes, pipes-concurrency, postgresql-simple
+, scintilla, stdenv, tasty, tasty-hspec, tasty-quickcheck, text
+, thyme, time, transformers, unordered-containers, uuid
 }:
 mkDerivation {
   pname = "scintilla-todo";
@@ -10,13 +10,14 @@ mkDerivation {
   src = ./.;
   isLibrary = true;
   isExecutable = true;
-  buildDepends = [
-    aeson attoparsec base bytestring containers either errors free lens
-    mmorph mtl opaleye opaleye-sot pipes pipes-concurrency
+  libraryHaskellDepends = [
+    aeson attoparsec base bytestring containers either exceptions free
+    HList lens mmorph mtl opaleye opaleye-sot pipes pipes-concurrency
     postgresql-simple scintilla text thyme time transformers
     unordered-containers uuid
   ];
-  testDepends = [
+  executableHaskellDepends = [ base ];
+  testHaskellDepends = [
     base containers mmorph scintilla tasty tasty-hspec tasty-quickcheck
     unordered-containers
   ];
