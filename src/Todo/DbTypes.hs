@@ -1,6 +1,8 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -36,10 +38,12 @@ import           GHC.Generics
 import           Control.Arrow
 import           Control.Category (id)
 import           Control.Lens
+import qualified Data.Time as Time'
 import qualified Data.Thyme as Time
 import           Data.Thyme (Day, LocalTime, UTCTime, DiffTime)
-import           Data.Thyme.Time.Core (Thyme, fromThyme)
+import           Data.Thyme.Time.Core (Thyme, fromThyme, toThyme, secondsToDiffTime)
 import           Data.Int
+import Database.PostgreSQL.Simple.FromField
 import qualified Opaleye as O
 import           Opaleye.SOT
 import           Prelude hiding (id)
@@ -54,20 +58,43 @@ thymeKol = kol . fromThyme
 
 instance ToKol UTCTime O.PGTimestamptz where kol = thymeKol
 
+instance O.QueryRunnerColumnDefault O.PGTimestamptz UTCTime where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+
+instance O.QueryRunnerColumnDefault O.PGUuid TodoItemId where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+
+instance O.QueryRunnerColumnDefault O.PGUuid PomodoroId where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+
+instance FromField UTCTime where
+  fromField f mb = toThyme <$> (fromField :: FieldParser Time'.UTCTime) f mb
+
 --------------------------------------------------------------------------------
 data TodoDb
 
 --------------------------------------------------------------------------------
-newtype PomodoroId = PomodoroId { unPomodoroId :: UUID }
+newtype PomodoroId = PomodoroId { unPomodoroId :: UUID } deriving (FromField)
 
 instance Wrapped PomodoroId where
   type Unwrapped PomodoroId = UUID
   _Wrapped' = iso unPomodoroId PomodoroId
 
+-- instance (FromField (Unwrapped a), Wrapped a) => FromField a where
+--   fromField f mb = view _Unwrapped' <$> fromField f mb
+
 instance ToKol PomodoroId O.PGUuid
 
+instance FromField PomodoroMinutes where
+  fromField f mb = PomodoroMinutes . convert <$> fromField f mb
+    where convert = secondsToDiffTime . (*60)
+
+instance O.QueryRunnerColumnDefault O.PGFloat8 PomodoroMinutes where
+  queryRunnerColumnDefault = O.fieldQueryRunnerColumn
+
+
 --------------------------------------------------------------------------------
-newtype PomodoroMinutes = PomodoroMinutes { unMins :: DiffTime }
+newtype PomodoroMinutes = PomodoroMinutes { unMins :: DiffTime } deriving Show
 
 instance Wrapped PomodoroMinutes where
   type Unwrapped PomodoroMinutes = DiffTime
@@ -92,7 +119,7 @@ instance Tabla TPomodoro where
 
 
  --------------------------------------------------------------------------------
-newtype TodoItemId = TodoItemId { unTodoItemId :: UUID }
+newtype TodoItemId = TodoItemId { unTodoItemId :: UUID } deriving (FromField)
 
 instance Wrapped TodoItemId where
   type Unwrapped TodoItemId = UUID
@@ -104,7 +131,7 @@ data TTodoItem
 instance Tabla TTodoItem where
   type Database TTodoItem = TodoDb
   type SchemaName TTodoItem = "todo"
-  type TableName TTodoItem = "todo-item"
+  type TableName TTodoItem = "todo_item"
   type Cols TTodoItem =
     [ 'Col "id" 'WD 'R O.PGUuid TodoItemId
     , 'Col "title" 'W 'R O.PGText Text
