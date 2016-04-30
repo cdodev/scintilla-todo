@@ -32,9 +32,12 @@ import           Data.Aeson                 (FromJSON (..), ToJSON (..))
 import qualified Data.Aeson                 as Aeson
 import Data.ByteString (ByteString)
 import           Data.Data                  (Data, Typeable)
+import qualified Data.Foldable as F
 import Data.HList.Record
+import Data.Maybe
 import           Data.Text                  (Text)
 --import qualified Data.Text                  as T
+import qualified Data.Map.Strict as Map
 import qualified Data.Text.Encoding         as T
 import           Data.UUID                  (UUID)
 import qualified Data.UUID                  as UUID
@@ -58,15 +61,7 @@ import Control.Monad.Reader
 import           Control.Monad.Catch             (MonadThrow, MonadCatch, MonadMask, SomeException,
                                                   throwM)
 
-type PkType t pk = Col_HsRType (Col_ByName t pk)
 
--- class 
-class (UnHsR t a, HasField (TC t pk) (Record (Cols_HsR t)) (PkType t pk)) => ReadKV t pk a where
-
--- readKV :: forall t a pk. (UnHsR t a, HasField (TC t pk) (Record (Cols_HsR t)) (PkType t pk)) => HsR t -> Either SomeException (PkType t pk, a)
-readKV row = do
-  a <- unHsR' row
-  return (row ^. cola (C :: C pk), a)
 
 data Pomodoro = Pomodoro {
     _started :: !UTCTime
@@ -76,11 +71,11 @@ data Pomodoro = Pomodoro {
 
 makeLenses ''Pomodoro
 
-instance UnHsR TPomodoro Pomodoro where
-  unHsR' r = return
-           $ Pomodoro (r ^. cola (C :: C "started_time"))
-                      (r ^. cola (C :: C "ended_time"))
-                      (r ^. cola (C :: C "scheduled_length"))
+instance ParseHsR TPomodoro Pomodoro where
+  parseHsR r = return
+           $ Pomodoro (r ^. col (C :: C "started_time"))
+                      (r ^. col (C :: C "ended_time"))
+                      (r ^. col (C :: C "scheduled_length"))
 
 
 data TodoItem = TodoItem {
@@ -93,66 +88,52 @@ data TodoItem = TodoItem {
 
 makeLenses ''TodoItem
 
-instance UnHsR TTodoItem TodoItem where
-  unHsR' r  = return
-            $ TodoItem (r ^. cola (C::C "title"))
-                       (r ^. cola (C::C "created"))
-                       (r ^. cola (C::C "completed"))
-                       (r ^. cola (C::C "due"))
+instance ParseHsR TTodoItem TodoItem where
+  parseHsR r  = return
+            $ TodoItem (r ^. col (C::C "title"))
+                       (r ^. col (C::C "created"))
+                       (r ^. col (C::C "completed"))
+                       (r ^. col (C::C "due"))
                        []
 --------------------------------------------------------------------------------
 -- QUERIES
-pomodorosForTodoQ :: O.QueryArr TodoItemId (PgR TPomodoro)
-pomodorosForTodoQ = proc pId -> do
-  pomodoro <- queryTabla' -< ()
-  restrict -< eq (pomodoro ^. col(C::C "todo_id")) (kol pId)
-  returnA -< pomodoro
-
-todosQ :: O.Query (PgR TTodoItem, PgR TPomodoro)
-todosQ = proc () -> do
-  todo <- queryTabla' -< ()
-  pomodoro <- queryTabla' -< ()
-  restrict -< eq
-    (todo ^. col (C::C "id"))
-    (pomodoro ^. col (C::C "todo_id"))
-  id -< (todo, pomodoro)
-
-todoByIds :: [TodoItemId] -> O.Query (PgR TTodoItem)
-todoByIds tIds = proc () -> do
-  t <- queryTabla' -< ()
-  restrict -<  in_ (kol tIds) (t ^. col (C::C "id"))
-  id -< t
-
-getTodos :: (MonadIO m, MonadThrow m, Allow 'Fetch ps) => DBMonad ps m [TodoItem]
-getTodos = Q.queryDb (queryTabla (T :: T TTodoItem))
-
-todosByIDs
-  :: (MonadIO m, MonadThrow m, Allow 'Fetch ps)
+todosByIds
+  :: forall m ps. (MonadIO m, MonadThrow m, Allow 'Fetch ps)
   => [TodoItemId]
   -> DBMonad ps m [TodoItem]
-todosByIDs todoIds =
-  runQuerying $
-    withQuery qTodos $ \todos ->
-      withQuery qPomodoros $ \pomodoros ->
-        for todoIds $ \todoId ->
-          let todo = Q.ask todos todoId
-              pomodoros' = Q.ask pomodoros todoId
-          in todo & pomodoros .~ pomodoros'
+todosByIds todoIds = catMaybes <$> q
   where
-    qTodos = extractId . queryDb <$> todoByIds
-    qPomodoros = _
-    extractId l a = _ 
+    q = runQuerying $
+        withQuery qTodos $ \todos ->
+          withQuery pomodorosByTodoIds $ \pomodoroLookup ->
+            for todoIds $ \todoId ->
+              let todo = Q.ask todos todoId
+                  pomodoros' = Q.ask pomodoroLookup todoId
+              in set (_Just.pomodoros) <$> (fromMaybe [] <$> pomodoros') <*> todo
+    qTodos :: [TodoItemId] -> DBMonad ps m [(TodoItemId, TodoItem)]
+    qTodos tIds = Q.queryDb tiQ
+      where
+        tiQ :: O.Query (PgR TTodoItem)
+        tiQ = proc () -> do
+          t <- queryTabla T -< ()
+          restrict -< (t ^. col (C::C "id")) `member` (kol <$> tIds)
+          id -< t
 
-pomodorosByTodoId
+pomodorosByTodoIds
   :: (MonadIO m, MonadThrow m, Allow 'Fetch ps)
-  => TodoItemId
-  -> DBMonad ps m [Pomodoro]
-pomodorosByTodoId todoId = Q.queryDb q
+  => [TodoItemId]
+  -> DBMonad ps m [(TodoItemId, [Pomodoro])]
+pomodorosByTodoIds todoIds = group <$> Q.queryDb q
   where
+    group :: [(TodoItemId, Pomodoro)] -> [(TodoItemId, [Pomodoro])]
+    group = Map.toList . F.foldr f (mempty :: Map.Map TodoItemId [Pomodoro])
+    f pom = Map.insertWith (++) (pom ^. _1) [pom ^. _2]
     q = proc () -> do
       pomodoro <- queryTabla (T :: T TPomodoro) -< ()
-      restrict -< eq (pomodoro ^. col(C::C "todo_id")) (kol todoId)
+      let tId = pomodoro ^. col(C::C "todo_id")
+      restrict -< tId `member` (kol <$> todoIds)
       returnA -< pomodoro
+
 --------------------------------------------------------------------------------
 -- QueryDB
 main :: IO ()
@@ -161,12 +142,9 @@ main = run
     run :: (MonadIO m, MonadThrow m, MonadMask m) => m ()
     run = do
       con <- connect' "dbname=todo"
-      let m = Q.queryDb q -- :: m [TodoItem]
-      (res :: [TodoItem]) <- runMonadQuery con m
+      -- let m = Q.queryDb q -- :: m [TodoItem]
+      (res :: [TodoItem]) <- runMonadQuery con (todosByIds tids)
       liftIO $ print res
-      where
-        q :: O.Query (PgR TTodoItem)
-        q = queryTabla'
-
+    tids = catMaybes [UUID.fromString "860d491e-0b6c-11e6-a934-6b21654c78a7" ^? _Just._Unwrapped']
 
 

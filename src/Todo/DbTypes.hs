@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -26,14 +27,11 @@ import           Control.Lens
 import           Data.Aeson                 (FromJSON (..), ToJSON (..))
 import qualified Data.Aeson                 as Aeson
 import Data.ByteString (ByteString)
-import           Data.Data                  (Data, Typeable)
 import           Data.Text                  (Text)
 --import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as T
 import           Data.UUID                  (UUID)
-import qualified Data.UUID                  as UUID
 -- import qualified Data.UUID.V4               as UUID
-import           GHC.Generics
 
 import           Control.Arrow
 import           Control.Category (id)
@@ -48,9 +46,15 @@ import qualified Opaleye as O
 import           Opaleye.SOT
 import           Prelude hiding (id)
 
+import Scintilla.Query as Q hiding (main)
 --------------------------------------------------------------------------------
 -- THYME ORPHANS
-thymeKol :: (Thyme time thyme, ToKol time pg) => thyme -> Kol pg
+thymeKol
+  :: ( Thyme time thyme
+     , ToKol time pg'
+     , PgTyped pg
+     , PgType pg ~ pg')
+  => thyme -> Kol (pg :: kb)
 thymeKol = kol . fromThyme
 
 -- instance (Thyme time thyme, ToKol time pg) => ToKol thyme pg where
@@ -80,8 +84,12 @@ instance Wrapped PomodoroId where
   type Unwrapped PomodoroId = UUID
   _Wrapped' = iso unPomodoroId PomodoroId
 
--- instance (FromField (Unwrapped a), Wrapped a) => FromField a where
---   fromField f mb = view _Unwrapped' <$> fromField f mb
+instance PgTyped PomodoroId where
+  type PgType PomodoroId = O.PGUuid
+
+instance ParseHsR TPomodoro TodoItemId where
+  parseHsR = return . view (col (C :: C "todo_id"))
+
 
 instance ToKol PomodoroId O.PGUuid
 
@@ -100,8 +108,11 @@ instance Wrapped PomodoroMinutes where
   type Unwrapped PomodoroMinutes = DiffTime
   _Wrapped' = iso unMins PomodoroMinutes
 
+instance PgTyped PomodoroMinutes where
+  type PgType PomodoroMinutes = O.PGFloat8
+
 instance ToKol PomodoroMinutes O.PGFloat8 where
-  kol = kol . O.pgDouble . fromRational . (*60) . toRational . fromThyme . unMins
+  kol = Kol . O.pgDouble . fromRational . (*60) . toRational . fromThyme . unMins
 
 --------------------------------------------------------------------------------
 data TPomodoro
@@ -119,13 +130,19 @@ instance Tabla TPomodoro where
 
 
  --------------------------------------------------------------------------------
-newtype TodoItemId = TodoItemId { unTodoItemId :: UUID } deriving (FromField)
+newtype TodoItemId = TodoItemId { unTodoItemId :: UUID } deriving (FromField, Eq, Ord)
 
 instance Wrapped TodoItemId where
   type Unwrapped TodoItemId = UUID
   _Wrapped' = iso unTodoItemId TodoItemId
 
+instance PgTyped TodoItemId where
+  type PgType TodoItemId = O.PGUuid
+
 instance ToKol TodoItemId O.PGUuid
+
+instance ParseHsR TTodoItem TodoItemId where
+  parseHsR = return . view (col (C :: C "id"))
 
 data TTodoItem
 instance Tabla TTodoItem where
@@ -139,6 +156,3 @@ instance Tabla TTodoItem where
     , 'Col "due" 'WD 'RN O.PGTimestamptz UTCTime
     , 'Col "completed" 'WD 'RN O.PGTimestamptz UTCTime
     ]
-
-
-instance Comparable TTodoItem "id" TPomodoro "todo_id"
