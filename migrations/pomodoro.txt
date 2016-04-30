@@ -1,0 +1,14 @@
+Description: (Describe migration here.)
+Created: 2016-04-29 09:37:24.498304 UTC
+Depends: todo
+Apply: |
+  CREATE TABLE todo.pomodoro (
+    id uuid PRIMARY KEY NOT NULL DEFAULT uuid_generate_v1()
+  , todo_id uuid REFERENCES todo.todo_item(id)  
+  , started_time timestamptz NOT NULL DEFAULT now()
+  , ended_time timestamptz
+  , scheduled_length int
+  );
+
+Revert: |
+  DROP TABLE todo.pomodoro;
