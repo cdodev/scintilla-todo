@@ -33,6 +33,7 @@ import qualified Data.Aeson                 as Aeson
 import Data.ByteString (ByteString)
 import           Data.Data                  (Data, Typeable)
 import qualified Data.Foldable as F
+import Data.HList.HList
 import Data.HList.Record
 import Data.Maybe
 import           Data.Text                  (Text)
@@ -78,6 +79,7 @@ instance ParseHsR TPomodoro Pomodoro where
                       (r ^. col (C :: C "scheduled_length"))
 
 
+--------------------------------------------------------------------------------
 data TodoItem = TodoItem {
    _title :: !Text
   , _created :: !UTCTime
@@ -95,6 +97,22 @@ instance ParseHsR TTodoItem TodoItem where
                        (r ^. col (C::C "completed"))
                        (r ^. col (C::C "due"))
                        []
+
+data CreateTodo = CreateTodo {
+    _tiNewTitle :: !Text
+  , _tiNewDue :: !(Maybe UTCTime)
+  }
+
+makeLenses ''CreateTodo
+
+instance ToHsI TTodoItem CreateTodo where
+  toHsI (CreateTodo t mDue) = mkHsI (T :: T TTodoItem) $ \set_ -> hBuild
+    (set_ (C :: C "id") WDef)
+    (set_ (C :: C "title") t)
+    (set_ (C :: C "created") WDef)
+    (set_ (C :: C "due") (WVal mDue))
+    (set_ (C :: C "completed") WDef)
+
 --------------------------------------------------------------------------------
 -- QUERIES
 todosByIds
@@ -135,6 +153,24 @@ pomodorosByTodoIds todoIds = group <$> Q.queryDb q
       returnA -< pomodoro
 
 --------------------------------------------------------------------------------
+-- WRITE
+saveNewTodo
+  :: ( MonadIO m, MonadThrow m
+     , Allow '[ 'Fetch, 'Insert ] ps)
+  => Text -> Maybe UTCTime -> DBMonad ps m TodoItemId
+saveNewTodo t mDue = do
+  res <- insertDB (T :: T TTodoItem) [CreateTodo t mDue]
+  case res of
+    [] -> chuck "No Rows Returned"
+    [r] -> return r
+    _ -> chuck "More than one row"
+  where
+    chuck = throwM . toException . MyErr
+
+data MyErr = MyErr String deriving Show
+
+instance Exception MyErr
+--------------------------------------------------------------------------------
 -- QueryDB
 main :: IO ()
 main = run
@@ -143,7 +179,10 @@ main = run
     run = do
       con <- connect' "dbname=todo"
       -- let m = Q.queryDb q -- :: m [TodoItem]
-      (res :: [TodoItem]) <- runMonadQuery con (todosByIds tids)
+      -- TODO: fix types
+      (res :: [TodoItem]) <- runMonadWrite con $ do
+         newID <- saveNewTodo "Test TODO" Nothing
+         todosByIds tids
       liftIO $ print res
     tids = catMaybes [UUID.fromString "860d491e-0b6c-11e6-a934-6b21654c78a7" ^? _Just._Unwrapped']
 
