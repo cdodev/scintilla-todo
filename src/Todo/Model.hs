@@ -179,7 +179,7 @@ main = run
     run = do
       con <- connect' "dbname=todo"
       -- let m = Q.queryDb q -- :: m [TodoItem]
-      -- TODO: fix types
+      -- TODO: fix types embed read in write.
       (res :: [TodoItem]) <- runMonadWrite con $ do
          newID <- saveNewTodo "Test TODO" Nothing
          todosByIds tids
