@@ -182,6 +182,7 @@ main = run
       -- TODO: fix types embed read in write.
       -- beeminder again
       -- gotta do some real work
+      -- gotta do some real work
       (res :: [TodoItem]) <- runMonadWrite con $ do
          newID <- saveNewTodo "Test TODO" Nothing
          todosByIds tids
