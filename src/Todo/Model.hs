@@ -181,7 +181,6 @@ main = run
       -- let m = Q.queryDb q -- :: m [TodoItem]
       -- TODO: fix types embed read in write.
       -- beeminder again
-      -- gotta do some real work
       (res :: [TodoItem]) <- runMonadWrite con $ do
          newID <- saveNewTodo "Test TODO" Nothing
          todosByIds tids
